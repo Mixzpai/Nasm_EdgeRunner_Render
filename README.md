@@ -2,7 +2,7 @@
 
 A retro, glitching cyberpunk title screen written in pure x86-64 NASM assembly, rendered natively at 1920x1080 with SDL2.
 
-![preview](assets/preview.gif)
+![preview](edgerunners_4bpp/assets/preview.gif)
 
 ## Features
 
