@@ -81,13 +81,14 @@ section .rodata
     win_title db "Edgerunners 1080p Tilemap - F11 Fullscreen, ESC Quit", 0
 
     %include "tiles.asm"                  ; TILE_SIZE, ROW_BYTES, TILE_BYTES, MAP_COLS,
-                                          ; MAP_ROWS, Palette, Tiles, Tilemap
+                                          ; MAP_ROWS, Palette, TilesPacked, Tilemap
 
 ; ================================================================= ;
 ; Block Started by Symbol                                           ;
 ; ================================================================= ;
 section .bss
     alignb 32
+    Tiles       resb TILE_COUNT * TILE_BYTES        ; Unpacked tile pixel data (filled at startup)
     base        resd TOTAL_PIXELS                   ; Clean rendered image (never modified after init)
     framebuffer resd TOTAL_PIXELS                   ; Per-frame output, glitched copy of base
     sdl_event   resb 64                             ; SDL_Event scratch space
@@ -107,6 +108,53 @@ _start:
     rdtsc
     or eax, 1
     mov [rng_state], eax
+
+    ; ------------------------------------------------------------- ;
+    ; Unpack TilesPacked (LZ4 block format) into Tiles              ;
+    ; ------------------------------------------------------------- ;
+    lea rsi, [TilesPacked]
+    lea r8, [TilesPacked.End]
+    lea rdi, [Tiles]
+.token:
+    cmp rsi, r8
+    jae .unpacked
+    movzx eax, byte [rsi]                           ; token: high nibble = literal count, low = match length - 4
+    inc rsi
+    mov ecx, eax
+    shr ecx, 4
+    cmp ecx, 15
+    jne .copy_literals
+.literal_ext:
+    movzx edx, byte [rsi]                           ; extra length bytes, 255 means more follow
+    inc rsi
+    add ecx, edx
+    cmp edx, 255
+    je .literal_ext
+.copy_literals:
+    rep movsb
+    cmp rsi, r8
+    jae .unpacked
+    movzx edx, word [rsi]                           ; match offset (little endian)
+    add rsi, 2
+    and eax, 0x0F
+    mov ecx, eax
+    cmp eax, 15
+    jne .match_len_done
+.match_ext:
+    movzx eax, byte [rsi]
+    inc rsi
+    add ecx, eax
+    cmp eax, 255
+    je .match_ext
+.match_len_done:
+    add ecx, 4                                      ; minimum match length
+    mov r9, rsi                                     ; keep the input pointer
+    mov rsi, rdi
+    sub rsi, rdx                                    ; source = output pointer - offset
+    rep movsb
+    mov rsi, r9
+    jmp .token
+.unpacked:
 
     ; ------------------------------------------------------------- ;
     ; RENDER THE TILEMAP ONCE INTO 'base' (1:1, no scaling)         ;
